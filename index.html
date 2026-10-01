@@ -41,6 +41,8 @@ b,strong{font-weight:700}
 .login-tabs button.on{color:var(--ink);border-bottom-color:var(--amber);background:#fbfaf6}
 .login-body{padding:18px 16px}
 .login-note{margin-top:14px;font-size:11.5px;color:var(--muted);text-align:center;line-height:1.5}
+.diag-link{display:block;margin:12px auto 0;background:none;border:0;color:var(--blue);font-size:11.5px;font-weight:800;letter-spacing:.5px}
+.diag-link:hover{text-decoration:underline}
 .role-chip{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:800;letter-spacing:1px;border-radius:99px;padding:4px 11px;border:1px solid}
 .role-chip.admin{color:var(--blue);border-color:#bcd0f2;background:#eef4fd}
 .role-chip.driver{color:var(--green);border-color:#bfe0cd;background:#eef8f2}
@@ -73,9 +75,9 @@ b,strong{font-weight:700}
 .sb-row2{display:flex;gap:8px;margin-top:8px}
 .sb-row2 .btn{flex:1;min-height:42px;font-size:11.5px;padding:8px 6px}
 .sb-ver{font-size:10px;color:#64768c;letter-spacing:.8px;text-align:center;margin-top:10px}
-.sync-badge{display:flex;align-items:center;justify-content:center;gap:7px;font-size:9.5px;font-weight:800;letter-spacing:1.2px;margin-bottom:9px}
+.sync-badge{display:flex;align-items:center;justify-content:center;gap:7px;font-size:9.5px;font-weight:800;letter-spacing:1.2px;margin-bottom:9px;width:100%;background:transparent;border:0;color:inherit;text-align:center;padding:4px 2px}
 .sync-badge .sdot{width:8px;height:8px;border-radius:99px;background:currentColor;flex:none}
-.sync-badge.ok{color:#1f9d55}.sync-badge.wait{color:#b7791f}.sync-badge.local{color:#8fa0b5}.sync-badge.err{color:#dc2626}
+.sync-badge.ok{color:#1f9d55}.sync-badge.wait{color:#b7791f}.sync-badge.local{color:#8fa0b5}.sync-badge.err{color:#ff6b6b}
 
 /* ============ HEADER ============ */
 .mainwrap{flex:1;min-width:0;display:flex;flex-direction:column}
@@ -129,7 +131,6 @@ b,strong{font-weight:700}
 .f-err{display:none;font-size:12px;font-weight:700;color:#b3261e;margin-top:5px}
 .f-err.show{display:block}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .link-danger{background:none;border:0;color:#b3261e;font-size:11px;font-weight:800;letter-spacing:.6px;padding:0}
 .link-danger:hover{text-decoration:underline}
 .money{display:flex;align-items:center;border:1.5px solid var(--line2);border-radius:10px;background:#fff;overflow:hidden;transition:border-color .15s,box-shadow .15s}
@@ -455,12 +456,11 @@ b,strong{font-weight:700}
 
 <script>
 /* =========================================================
-   TRANSPORT SMJ v3.0 — DUA PERAN (ADMIN & SUPIR)
-   - Login: SUPIR (nama + password sendiri) / ADMIN (password)
-   - Supir daftar sendiri (nama, no pol, unit, password)
-   - Supir: input otomatis atas namanya, riwayat miliknya
-   - Admin: lihat semua, input untuk supir, atur password supir
-   - v2.6: KBM potong UJ, Scan PRO, sync aman, struk PNG
+   TRANSPORT SMJ v3.1 — DUA PERAN + DIAGNOSIS CLOUD
+   BARU v3.1:
+   - Gear pasti aktif (dipasang permanen + pengaman peran)
+   - Ketuk badge sinkronisasi → jendela DIAGNOSIS yang
+     menampilkan status & kode error persis per komponen
 ========================================================= */
 
 /* ---------- KONFIGURASI & KUNCI DATA ---------- */
@@ -530,7 +530,7 @@ async function fetchAsDataURL(url){
   } catch(e){ return null; }
 }
 
-/* ---------- HASH PASSWORD (deterministik, semua perangkat sama) ---------- */
+/* ---------- HASH PASSWORD ---------- */
 function pwHash(str){
   const s = String(str || '') + '|SMJ-SALT';
   let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
@@ -586,7 +586,7 @@ const AUTH = {
 };
 
 /* =========================================================
-   FIREBASE CLOUD SYNC
+   FIREBASE CLOUD SYNC + DIAGNOSI
 ========================================================= */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyA1sx3-3U5u68lHzeSw9Vnpi3fAk2Cm7NU",
@@ -598,17 +598,22 @@ const FIREBASE_CONFIG = {
   measurementId: "G-T1CYRJFLN1"
 };
 const COLS = { drivers: 'smj_drivers', destinations: 'smj_destinations', transactions: 'smj_transactions' };
-const CLOUD = { available: false, online: false, err: false, db: null, storage: null, unsubs: [], errShown: false };
+const CLOUD = { available: false, online: false, err: false, db: null, storage: null, unsubs: [], errShown: false, diag: {} };
 const SYNC = { firstSnap: {}, applied: {}, cloudData: {}, cfgReady: false, cfgSeeded: false, seedDone: false, kbmFixDone: false };
 let LOCAL_SNAPSHOT = null;
 
 function updateSyncBadge(){
+  const diags = Object.values(CLOUD.diag).filter(Boolean);
   let cls, txt;
   if (!CLOUD.available){ cls = 'local'; txt = 'MODE LOKAL — CLOUD TIDAK AKTIF'; }
-  else if (CLOUD.err){ cls = 'err'; txt = 'CLOUD DITOLAK — CEK SECURITY RULES'; }
-  else if (!CLOUD.online){ cls = 'wait'; txt = 'MENGHUBUNGKAN KE CLOUD…'; }
+  else if (diags.length){ cls = 'err'; txt = 'CLOUD ERROR: ' + diags[0] + ' — KETUK'; }
+  else if (!CLOUD.online){ cls = 'wait'; txt = 'MENGHUBUNGKAN… — KETUK UNTUK DIAGNOSIS'; }
   else { cls = 'ok'; txt = 'TERSINKRON — FIREBASE CLOUD'; }
-  document.querySelectorAll('.sync-badge').forEach(b => { b.className = 'sync-badge ' + cls; b.innerHTML = '<i class="sdot"></i>' + txt; });
+  document.querySelectorAll('.sync-badge').forEach(b => {
+    b.className = 'sync-badge ' + cls;
+    b.innerHTML = '<i class="sdot"></i>' + txt;
+    b.onclick = openSyncDiag;
+  });
 }
 function initCloud(){
   LOCAL_SNAPSHOT = {
@@ -631,26 +636,31 @@ function initCloud(){
 }
 function cloudErr(what){
   return err => {
-    console.warn('Cloud sync [' + what + ']:', err && err.code, err && err.message);
-    if (err && err.code === 'permission-denied') CLOUD.err = true;
+    const code = (err && (err.code || err.message)) ? (err.code || String(err.message).slice(0, 40)) : 'unknown';
+    console.warn('Cloud sync [' + what + ']:', code);
+    CLOUD.diag[what] = code;
+    if (code === 'permission-denied') CLOUD.err = true;
     updateSyncBadge();
-    if (!CLOUD.errShown && err && err.code === 'permission-denied'){
+    if (code === 'permission-denied' && !CLOUD.errShown){
       CLOUD.errShown = true;
-      toast('Cloud menolak akses (permission-denied). Aplikasi berjalan mode lokal. Periksa Security Rules Firestore & Storage.', { type: 'warn', icon: 'cloud-off', dur: 10000 });
+      toast('Cloud MENOLAK akses (permission-denied). Rules Firestore belum benar / belum di proyek transport-smj.', { type: 'warn', icon: 'cloud-off', dur: 10000 });
     }
   };
 }
 function startCloudListeners(){
   CLOUD.unsubs.push(CLOUD.db.collection('smj_config').doc('app').onSnapshot(s => {
+    CLOUD.diag['config'] = null;
     SYNC.cfgReady = true;
     SYNC.cfgSeeded = !!s.exists && !!s.data().seeded;
     checkCloudSeed();
   }, cloudErr('config')));
   CLOUD.unsubs.push(CLOUD.db.collection('smj_config').doc('settings').onSnapshot(s => {
+    CLOUD.diag['settings'] = null;
     if (s.exists) DB.write(KEYS.settings, { ...DB.read(KEYS.settings, {}), ...s.data() });
   }, cloudErr('settings')));
   Object.entries(COLS).forEach(([k, col]) => {
     CLOUD.unsubs.push(CLOUD.db.collection(col).onSnapshot(snap => {
+      CLOUD.diag[k] = null;
       CLOUD.online = true; CLOUD.err = false;
       SYNC.firstSnap[k] = true;
       SYNC.cloudData[k] = snap.docs.map(d => k === 'transactions' ? fixKbmTotal(d.data()) : d.data());
@@ -676,6 +686,63 @@ function startCloudListeners(){
 function maybeRefresh(){
   if (modalStack.length) return;
   if (['dashboard','history','drivers','dest','dHome','dHistory'].includes(State.page)) render();
+}
+function checkCloudSeed(){
+  if (!CLOUD.available || SYNC.seedDone || !SYNC.cfgReady) return;
+  const keys = Object.keys(COLS);
+  if (!keys.every(k => SYNC.firstSnap[k])) return;
+  SYNC.seedDone = true;
+  if (SYNC.cfgSeeded) return;
+  const local = {
+    drivers: LOCAL_SNAPSHOT.drivers || [],
+    destinations: LOCAL_SNAPSHOT.destinations || [],
+    transactions: LOCAL_SNAPSHOT.transactions || []
+  };
+  const jobs = [];
+  keys.forEach(k => { if (local[k].length) jobs.push(pushBatch(k, local[k])); });
+  if (LOCAL_SNAPSHOT.settings && LOCAL_SNAPSHOT.settings.adminWa){
+    jobs.push(CLOUD.db.collection('smj_config').doc('settings').set(LOCAL_SNAPSHOT.settings).catch(() => {}));
+  }
+  Promise.all(jobs).catch(() => {}).then(() => {
+    CLOUD.db.collection('smj_config').doc('app').set({ seeded: true, seededAt: Date.now() }).catch(() => {});
+    if (jobs.length) toast('Sinkronisasi awal: seluruh data perangkat dikirim ke Firebase Cloud.', { type: 'ok', icon: 'cloud-upload', dur: 6000 });
+  });
+}
+/* ---------- JENDELA DIAGNOSIS ---------- */
+function openSyncDiag(){
+  const row = (l, v) => '<div class="sum-r"><span>' + l + '</span><b>' + v + '</b></div>';
+  const okV = '<span style="color:#1a7a4a">TERSAMBUNG</span>';
+  const waitV = '<span style="color:#8a5a00">MENUNGGU BALASAN…</span>';
+  const errV = c => '<span style="color:#b3261e">ERROR: ' + esc(c) + '</span>';
+  const body =
+    '<div class="card" style="padding:13px;box-shadow:none">' +
+      row('Proyek aplikasi', '<b>' + esc(FIREBASE_CONFIG.projectId) + '</b>') +
+      row('SDK Firebase', (typeof firebase !== 'undefined' && firebase.initializeApp) ? okV : errV('TIDAK TERMUAT')) +
+      row('Firestore', CLOUD.available ? okV : errV('TIDAK AKTIF')) +
+      row('Listener smj_config/app', CLOUD.diag['config'] ? errV(CLOUD.diag['config']) : (SYNC.cfgReady ? okV : waitV)) +
+      row('Listener smj_config/settings', CLOUD.diag['settings'] ? errV(CLOUD.diag['settings']) : (SYNC.firstSnap['settings'] || SYNC.cfgReady ? okV : waitV)) +
+      Object.entries(COLS).map(([k, col]) =>
+        row('Listener ' + col, CLOUD.diag[k] ? errV(CLOUD.diag[k]) : (SYNC.firstSnap[k] ? okV : waitV))).join('') +
+      row('Data lokal — supir', DB.read(KEYS.drivers, []).length) +
+      row('Data lokal — tujuan', DB.read(KEYS.destinations, []).length) +
+      row('Data lokal — transaksi', DB.read(KEYS.transactions, []).length) +
+    '</div>' +
+    '<div class="hint" style="margin-top:10px;line-height:1.6">' +
+    (!CLOUD.available
+      ? '<b>SDK Firebase gagal dimuat</b> — periksa internet, atau jaringan memblokir gstatic.com. Muat ulang halaman.'
+      : (Object.values(CLOUD.diag).filter(Boolean).length
+         ? '<b>Ada error:</b> <i>permission-denied</i> = rules belum benar / salah proyek. <i>not-found</i> = Firestore belum dibuat di proyek transport-smj. Perbaiki di console lalu muat ulang aplikasi.'
+         : (!CLOUD.online
+            ? '<b>Semua listener menunggu tanpa balasan.</b> Periksa: (1) internet aktif, (2) tanggal & jam HP diset OTOMATIS — tanggal salah membuat koneksi Google gagal, (3) coba WiFi/kuota lain, (4) muat ulang halaman. Pastikan juga rules di-publish di proyek <b>transport-smj</b> (bukan smj-trasport).'
+            : '<b>Koneksi cloud sehat.</b> Jika data tidak muncul di perangkat lain, gunakan KIRIM LOKAL → CLOUD di perangkat sumber, lalu muat ulang di perangkat tujuan.')));
+  openModal({
+    title: 'DIAGNOSIS KONEKSI CLOUD', wide: true, body,
+    foot: '<button class="btn btn-o" data-r><i data-lucide="refresh-cw"></i> MUAT ULANG</button><button class="btn btn-p" data-t>TUTUP</button>',
+    onOpen(w, close){
+      w.querySelector('[data-t]').onclick = close;
+      w.querySelector('[data-r]').onclick = () => location.reload();
+    }
+  });
 }
 function checkCloudSeed(){
   if (!CLOUD.available || SYNC.seedDone || !SYNC.cfgReady) return;
@@ -850,7 +917,6 @@ function periodStart(p){
   if (p === 'month'){ s.setDate(1); return s.getTime(); }
   return 0;
 }
-/* Transaksi milik supir yang sedang login */
 function myTrxs(){
   const d = AUTH.driver();
   if (!d) return [];
@@ -1153,7 +1219,7 @@ function renderLogin(){
     : isA ?
       '<div class="field"><div class="f-label"><span>PASSWORD ADMIN</span></div><input id="lgPwA" class="inp" type="password" placeholder="Password pengurus"></div>' +
       '<button class="btn btn-p btn-block" id="lgBtnA"><i data-lucide="shield-check"></i> MASUK SEBAGAI PENGURUS</button>' +
-      '<div class="login-note">Password awal pengurus: <b>smj123</b> — segera ganti di menu Pengaturan.</div>'
+      '<div class="login-note">Password awal pengurus: <b>smj123</b> — segera ganti lewat tombol PASSWORD di sidebar setelah masuk.</div>'
     :
       '<div class="field"><div class="f-label"><span>NAMA LENGKAP <b class="req">*</b></span></div><input id="rgNama" class="inp" placeholder="Nama Anda" style="text-transform:uppercase"></div>' +
       '<div class="field"><div class="f-label"><span>NO. POLISI <b class="req">*</b></span></div><input id="rgNopol" class="inp" placeholder="B9526UPA" style="text-transform:uppercase;letter-spacing:1px"></div>' +
@@ -1169,12 +1235,15 @@ function renderLogin(){
       '<div class="login-tabs">' + tabs.map(t =>
         '<button data-t="' + t[0] + '" class="' + (loginTab === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('') + '</div>' +
       '<div class="login-body" id="lgBody">' + body + '</div>' +
-    '</div></div>';
+    '</div>' +
+    '<button class="diag-link" id="lgDiag"><i data-lucide="activity"></i> CEK STATUS KONEKSI CLOUD (DIAGNOSIS)</button>' +
+    '</div>';
   icons();
   page.querySelector('.login-tabs').onclick = e => {
     const b = e.target.closest('[data-t]'); if (!b) return;
     loginTab = b.dataset.t; renderLogin();
   };
+  $('#lgDiag').onclick = openSyncDiag;
   if (isD){
     $('#lgBtn').onclick = () => {
       const nama = ($('#lgNama').value || '').trim().toUpperCase();
@@ -1239,7 +1308,7 @@ function applyChrome(){
 }
 
 /* =========================================================
-   NAV & FOOTER SIDEBAR (per peran)
+   NAV & FOOTER SIDEBAR
 ========================================================= */
 const PAGES = [
   { id: 'dashboard', label: 'DASHBOARD', icon: 'layout-dashboard', color: 'var(--blue)' },
@@ -1271,7 +1340,7 @@ function buildNav(){
       '<button class="btn btn-o" id="sbPw" style="background:transparent;border-color:rgba(255,255,255,.25);color:#dfe6ef"><i data-lucide="key-round"></i> PASSWORD</button>' +
       '<button class="btn btn-o" id="sbOut" style="background:transparent;border-color:rgba(255,255,255,.25);color:#dfe6ef"><i data-lucide="log-out"></i> KELUAR</button>' +
     '</div>' +
-    '<div class="sb-ver">v3.0 · ADMIN & SUPIR · CLOUD</div>';
+    '<div class="sb-ver">v3.1 · ADMIN & SUPIR · DIAGNOSA CLOUD</div>';
   icons();
   nav.onclick = e => { const b = e.target.closest('.nav-it'); if (b) navigate(b.dataset.page); };
   updateSyncBadge();
@@ -1280,8 +1349,6 @@ function buildNav(){
     onOk(){ AUTH.clear(); State.page = 'dashboard'; applyChrome(); render(); toast('Anda telah keluar.', { icon: 'log-out' }); }
   });
   $('#sbPw').onclick = () => isDriver ? openChangePw() : openAdminPw();
-  $('#btnMenu').onclick = openSidebar;
-  $('#overlay').onclick = closeSidebar;
 }
 
 /* ---------- GANTI PASSWORD ---------- */
@@ -1574,9 +1641,10 @@ function buildDraft(fs){
 function formSections(u, mode, initStatus, lockDrv){
   const statusOpts = STATUSES.map(s => '<option value="' + s + '"' + (s === (initStatus || 'PENGAJUAN BARU') ? ' selected' : '') + '>' + s + '</option>').join('');
   const supirBlock = lockDrv
-    ? '<div class="profile-lock"><div class="avatar">' + esc(lockDrv.nama.charAt(0)) + '</div>' +
+    ? '<div class="fsec"><div class="fsec-h"><span class="fsec-ic"><i data-lucide="user"></i></span><div><b>DATA SUPIR</b><small>Otomatis dari akun Anda</small></div></div><div class="fsec-b">' +
+      '<div class="profile-lock"><div class="avatar">' + esc(lockDrv.nama.charAt(0)) + '</div>' +
       '<div class="p-mid"><b>' + esc(lockDrv.nama) + '</b>' +
-      '<small><span class="plate-mini">' + esc(lockDrv.noPolisi) + '</span> <span class="unit-chip">' + esc(lockDrv.unit) + '</span> <em class="auto-tag">OTOMATIS — AKUN ANDA</em></small></div></div>'
+      '<small><span class="plate-mini">' + esc(lockDrv.noPolisi) + '</span> <span class="unit-chip">' + esc(lockDrv.unit) + '</span> <em class="auto-tag">OTOMATIS — AKUN ANDA</em></small></div></div></div></div>'
     : '<div class="fsec"><div class="fsec-h"><span class="fsec-ic"><i data-lucide="user"></i></span><div><b>DATA SUPIR</b><small>Pilih nama — No. Polisi & Unit terisi otomatis dari Master Supir</small></div></div><div class="fsec-b">' +
       '<div class="field"><div class="f-label"><span>NAMA SUPIR <b class="req">*</b></span></div><div id="' + u + 'SSupir"></div><div class="f-err" id="' + u + 'ErrSupir"></div></div>' +
       '<div class="grid2"><div class="field"><div class="f-label"><span>NO. POLISI</span><em class="auto-tag">OTOMATIS</em></div><div class="auto-val" id="' + u + 'Nopol">—</div></div>' +
@@ -1622,7 +1690,7 @@ function formSections(u, mode, initStatus, lockDrv){
     '<div class="hint">Ambil atau pilih berulang untuk menambah beberapa foto sekaligus.</div>' +
   '</div></div>' +
   (mode === 'edit'
-    ? '<div class="fsec"><div class="fsec-h"><span class="fsec-ic"><i data-lucide="flag"></i></span><div><b>STATUS PENGAJUAN</b><small>' + (lockDrv ? 'Ubah status bila diminta pengurus' : 'Perbarui status bila diperlukan') + '</small></div></div><div class="fsec-b"><select id="' + u + 'Status" class="inp">' + statusOpts + '</select></div></div>'
+    ? '<div class="fsec"><div class="fsec-h"><span class="fsec-ic"><i data-lucide="flag"></i></span><div><b>STATUS PENGAJUAN</b><small>Perbarui status bila diperlukan</small></div></div><div class="fsec-b"><select id="' + u + 'Status" class="inp">' + statusOpts + '</select></div></div>'
     : '') +
   '<div class="sum-panel" id="' + u + 'Sum"></div>';
 }
@@ -1748,6 +1816,8 @@ function mountForm(host, { init = {}, mode = 'create', onSubmit, driver = null }
   q(u + 'FGal').addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
 
   function recalc(){
+    const setAuto = (id, v) => { const el = q(id); if (!el) return; el.textContent = v || '—'; el.classList.toggle('set', !!v); };
+    setAuto(u + 'Nopol', fs.noPolisi); setAuto(u + 'Unit', fs.unit);
     const { tar, finalName } = currentTarif(fs);
     const tarifEl = q(u + 'Tarif');
     if (tar){
@@ -2080,7 +2150,7 @@ function renderHistory(){
 function renderDriverHistory(){
   const page = $('#page');
   page.innerHTML =
-    '<div class="page-head" style="--mc:var(--purple)"><h1>RIWAYAT SAYA</h1><p>Pengajuan atas nama Anda — bisa diedit selama masih PENGAJUAN BARU</p></div>' +
+    '<div class="page-head" style="--mc:var(--purple)"><h1>RIWAYAT SAYA</h1><p>Pengajuan atas nama Anda</p></div>' +
     '<div class="toolbar">' +
       '<div class="search"><i data-lucide="search"></i><input class="inp" id="histQ" placeholder="Cari tujuan / No. DN / ID…" value="' + esc(State.histQ) + '"></div>' +
       '<select class="inp" id="histSt"><option value="">Semua Status</option>' + STATUSES.map(s => '<option' + (State.histSt === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select>' +
@@ -2518,7 +2588,7 @@ function openStruk(id){
 function renderDrivers(){
   const page = $('#page');
   page.innerHTML =
-    '<div class="page-head" style="--mc:var(--orange)"><h1>MASTER SUPIR</h1><p>Tekan ikon <b>kunci</b> untuk membuat / mengatur password supir — supir login dengan namanya & password itu</p></div>' +
+    '<div class="page-head" style="--mc:var(--orange)"><h1>MASTER SUPIR</h1><p>Tekan tombol <b>PW</b> untuk membuat / mengatur password supir — supir login dengan namanya & password itu</p></div>' +
     '<div class="toolbar"><div class="search"><i data-lucide="search"></i><input class="inp" id="drvQ" placeholder="Cari nama / no polisi…" value="' + esc(State.drvQ) + '"></div>' +
     '<button class="btn btn-p" id="btnAddDrv"><i data-lucide="user-plus"></i> TAMBAH SUPIR</button></div>' +
     '<div id="drvList"></div>';
@@ -2561,7 +2631,7 @@ function renderDrvList(){
   host.innerHTML = '<div class="mlist">' + list.map(d =>
     '<div class="card mcard"><div class="avatar">' + esc((d.nama || '?').charAt(0)) + '</div>' +
     '<div class="m-mid"><b>' + esc(d.nama) + '</b><small><span class="plate-mini">' + esc(d.noPolisi) + '</span> <span class="unit-chip">' + esc(d.unit) + '</span>' +
-    (d.pwHash ? '<span class="pw-chip ok"><i data-lucide="check"></i>PW TERPASANG</span>' : '<span class="pw-chip none">BELUM ADA PW</span>') + '</small></div>' +
+    (d.pwHash ? '<span class="pw-chip ok">PW TERPASANG</span>' : '<span class="pw-chip none">BELUM ADA PW</span>') + '</small></div>' +
     '<div class="row-acts">' +
     '<button class="act-btn k" data-act="pw" data-id="' + esc(d.id) + '" title="Atur password"><i data-lucide="key-round"></i>PW</button>' +
     '<button class="act-btn" data-act="edit" data-id="' + esc(d.id) + '"><i data-lucide="pencil"></i>EDIT</button>' +
@@ -2598,7 +2668,7 @@ function openDriverForm(d){
       '<div class="field"><div class="f-label"><span>NAMA SUPIR <b class="req">*</b></span></div><input id="dvNama" class="inp" maxlength="40" placeholder="Nama supir" style="text-transform:uppercase"></div>' +
       '<div class="field"><div class="f-label"><span>NO. POLISI <b class="req">*</b></span></div><input id="dvNopol" class="inp" maxlength="12" placeholder="A8685G" style="text-transform:uppercase;letter-spacing:1px"></div>' +
       '<div class="field"><div class="f-label"><span>UNIT <b class="req">*</b></span></div><select id="dvUnit" class="inp">' + UNITS.map(u => '<option>' + u + '</option>').join('') + '</select></div>' +
-      (d ? '' : '<div class="field"><div class="f-label"><span>PASSWORD SUPIR (OPSIONAL)</span></div><input id="dvPw" class="inp" type="text" placeholder="Kosongkan jika supir daftar sendiri / diatur belakangan" autocomplete="off"><div class="hint">Kalau diisi, supir langsung bisa login dengan namanya & password ini.</div></div>'),
+      (d ? '' : '<div class="field"><div class="f-label"><span>PASSWORD SUPIR (OPSIONAL)</span></div><input id="dvPw" class="inp" type="text" placeholder="Kosongkan jika diatur belakangan" autocomplete="off"><div class="hint">Kalau diisi, supir langsung bisa login dengan namanya & password ini.</div></div>'),
     foot: '<button class="btn btn-o" data-b>BATAL</button><button class="btn btn-p" data-s>' + (d ? 'SIMPAN PERUBAHAN' : 'SIMPAN') + '</button>',
     onOpen(w, close){
       const nEl = w.querySelector('#dvNama'), pEl = w.querySelector('#dvNopol'), uEl = w.querySelector('#dvUnit');
@@ -2743,52 +2813,8 @@ function openDestForm(d){
 /* =========================================================
    PENGATURAN (ADMIN)
 ========================================================= */
-function backupData(){
-  const payload = {
-    app: 'TRANSPORT SMJ', version: 6, exportedAt: new Date().toISOString(),
-    drivers: DataService.getDrivers(),
-    destinations: DataService.getDestinations(),
-    transactions: DataService.getTransactions(),
-    settings: DataService.getSettings()
-  };
-  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'backup-smj-' + fmtDateSlash(new Date()).replace(/\//g, '-') + '.json';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(a.href);
-  toast('File backup berhasil diunduh. Simpan dengan aman.', { type: 'ok', icon: 'download', dur: 6000 });
-}
-function restoreData(file){
-  if (!file) return;
-  const r = new FileReader();
-  r.onload = () => {
-    let data;
-    try { data = JSON.parse(r.result); } catch(e){ toast('File backup tidak valid.', { type: 'warn', icon: 'alert-triangle' }); return; }
-    if (!data || !Array.isArray(data.drivers) || !Array.isArray(data.destinations) || !Array.isArray(data.transactions)){
-      toast('Struktur file backup tidak dikenali.', { type: 'warn', icon: 'alert-triangle' }); return;
-    }
-    confirmModal({
-      title: 'PULIHKAN DATA',
-      msg: 'Pulihkan backup ini?<br><br><b>' + data.drivers.length + '</b> supir · <b>' + data.destinations.length + '</b> tujuan · <b>' + data.transactions.length + '</b> transaksi<br><br>Data saat ini akan <b>ditimpa</b> di perangkat ini, lalu disinkronkan ke cloud.',
-      okLabel: 'PULIHKAN', okClass: 'btn-danger',
-      onOk(){
-        DB.write(KEYS.drivers, data.drivers);
-        DB.write(KEYS.destinations, data.destinations);
-        DB.write(KEYS.transactions, data.transactions.map(fixKbmTotal));
-        if (data.settings) DB.write(KEYS.settings, data.settings);
-        if (CLOUD.available) cloudPushAll();
-        closeAllModals();
-        render();
-        toast('Data berhasil dipulihkan dari backup.', { type: 'ok', icon: 'check-circle-2' });
-      }
-    });
-  };
-  r.readAsText(file);
-}
 function openSettings(){
+  if (!AUTH.isAdmin()){ toast('Pengaturan hanya untuk admin/pengurus.', { icon: 'shield' }); return; }
   const s = DataService.getSettings();
   openModal({
     title: 'PENGATURAN', wide: true,
@@ -2799,8 +2825,8 @@ function openSettings(){
       '<div class="field"><div class="f-label"><span>PASSWORD ADMIN</span></div>' +
       '<button type="button" class="btn btn-o btn-block" id="stPw"><i data-lucide="key-round"></i> GANTI PASSWORD ADMIN</button></div>' +
       '<div class="field"><div class="f-label"><span>STATUS SINKRONISASI FIREBASE</span></div>' +
-      '<div class="card" style="padding:13px;box-shadow:none"><div class="sync-badge" id="stSync"><i class="sdot"></i>…</div>' +
-      '<div class="hint" style="text-align:center;margin-top:6px">Data selalu tersimpan di perangkat (instan & tahan offline), lalu disinkronkan otomatis ke Firebase Cloud.</div>' +
+      '<div class="card" style="padding:13px;box-shadow:none"><button class="sync-badge" id="stSync"><i class="sdot"></i>…</button>' +
+      '<div class="hint" style="text-align:center;margin-top:6px">Data selalu tersimpan di perangkat (instan & tahan offline), lalu disinkronkan otomatis ke Firebase Cloud. Ketuk badge untuk diagnosis.</div>' +
       (CLOUD.available
         ? '<div class="grid2" style="margin-top:11px">' +
           '<button type="button" class="btn btn-o sm" id="btnPush"><i data-lucide="cloud-upload"></i> KIRIM LOKAL → CLOUD</button>' +
@@ -2852,6 +2878,51 @@ function openSettings(){
     }
   });
 }
+function backupData(){
+  const payload = {
+    app: 'TRANSPORT SMJ', version: 7, exportedAt: new Date().toISOString(),
+    drivers: DataService.getDrivers(),
+    destinations: DataService.getDestinations(),
+    transactions: DataService.getTransactions(),
+    settings: DataService.getSettings()
+  };
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'backup-smj-' + fmtDateSlash(new Date()).replace(/\//g, '-') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+  toast('File backup berhasil diunduh. Simpan dengan aman.', { type: 'ok', icon: 'download', dur: 6000 });
+}
+function restoreData(file){
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    let data;
+    try { data = JSON.parse(r.result); } catch(e){ toast('File backup tidak valid.', { type: 'warn', icon: 'alert-triangle' }); return; }
+    if (!data || !Array.isArray(data.drivers) || !Array.isArray(data.destinations) || !Array.isArray(data.transactions)){
+      toast('Struktur file backup tidak dikenali.', { type: 'warn', icon: 'alert-triangle' }); return;
+    }
+    confirmModal({
+      title: 'PULIHKAN DATA',
+      msg: 'Pulihkan backup ini?<br><br><b>' + data.drivers.length + '</b> supir · <b>' + data.destinations.length + '</b> tujuan · <b>' + data.transactions.length + '</b> transaksi<br><br>Data saat ini akan <b>ditimpa</b> di perangkat ini, lalu disinkronkan ke cloud.',
+      okLabel: 'PULIHKAN', okClass: 'btn-danger',
+      onOk(){
+        DB.write(KEYS.drivers, data.drivers);
+        DB.write(KEYS.destinations, data.destinations);
+        DB.write(KEYS.transactions, data.transactions.map(fixKbmTotal));
+        if (data.settings) DB.write(KEYS.settings, data.settings);
+        if (CLOUD.available) cloudPushAll();
+        closeAllModals();
+        render();
+        toast('Data berhasil dipulihkan dari backup.', { type: 'ok', icon: 'check-circle-2' });
+      }
+    });
+  };
+  r.readAsText(file);
+}
 
 /* =========================================================
    ROUTER & NAVIGASI
@@ -2897,6 +2968,15 @@ function tickClock(){
 
 /* ---------- INIT ---------- */
 (function init(){
+  /* Gear: dipasang permanen + dipasang ulang berkala (tahan re-render) */
+  const bindGear = () => {
+    const b = $('#btnSettings');
+    if (b && !b.dataset.bound){ b.dataset.bound = '1'; b.onclick = openSettings; }
+  };
+  bindGear();
+  setInterval(bindGear, 1500);
+  $('#btnMenu').onclick = openSidebar;
+  $('#overlay').onclick = closeSidebar;
   tickClock();
   setInterval(tickClock, 1000);
   seedIfEmpty();
